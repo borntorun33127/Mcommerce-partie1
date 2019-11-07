@@ -2,6 +2,7 @@ package com.ecommerce.microcommerce.web.controller;
 
 import com.ecommerce.microcommerce.dao.ProductDao;
 import com.ecommerce.microcommerce.model.Product;
+import com.ecommerce.microcommerce.web.exceptions.ProduitGratuitException;
 import com.ecommerce.microcommerce.web.exceptions.ProduitIntrouvableException;
 import com.fasterxml.jackson.databind.ser.FilterProvider;
 import com.fasterxml.jackson.databind.ser.impl.SimpleBeanPropertyFilter;
@@ -14,9 +15,16 @@ import org.springframework.http.converter.json.MappingJacksonValue;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
-import javax.validation.Valid;
+import javax.validation.ConstraintViolation;
+import javax.validation.Validation;
+import javax.validation.ValidatorFactory;
+import javax.validation.Validator;
+
 import java.net.URI;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 
 @Api( description="API pour es opérations CRUD sur les produits.")
@@ -67,8 +75,24 @@ public class ProductController {
     //ajouter un produit
     @PostMapping(value = "/Produits")
 
-    public ResponseEntity<Void> ajouterProduit(@Valid @RequestBody Product product) {
+    public ResponseEntity<Void> ajouterProduit(@RequestBody Product product) {
+    	ValidatorFactory factory = Validation.buildDefaultValidatorFactory();
+        Validator validator = factory.getValidator();
 
+        Set<ConstraintViolation<Product>> constraintViolations = 
+          validator.validate(product);
+        if(constraintViolations.size()>0){
+        	for (ConstraintViolation<Product> contraints : constraintViolations) {
+        		switch(contraints.getPropertyPath().toString()){
+        		case "prix" :
+        			throw new ProduitGratuitException(contraints.getMessage());
+        		case "nom" :
+        			throw new ProduitIntrouvableException(contraints.getMessage());
+        		default :
+        			throw new RuntimeException(contraints.getMessage());
+        		}
+        	}
+        }
         Product productAdded =  productDao.save(product);
 
         if (productAdded == null)
@@ -97,11 +121,32 @@ public class ProductController {
 
 
     //Pour les tests
+    @GetMapping(value = "/AdminProduits")
+    public ResponseEntity<Map<Product, Integer>>  calculerMargeProduits() {
+    	Map<Product, Integer> map = new HashMap<>();
+		MappingJacksonValue listProduct = listeProduits();
+    	@SuppressWarnings("unchecked")
+    	List<Product> liste = (List<Product>) listProduct.getValue();
+    	for(Product aProduct :  liste){
+    		map.put(aProduct, aProduct.getPrix()-aProduct.getPrixAchat());
+    	}
+        return ResponseEntity.ok().body(map);
+    }
+
+
+    //Pour les tests
     @GetMapping(value = "test/produits/{prix}")
     public List<Product>  testeDeRequetes(@PathVariable int prix) {
 
-        return productDao.chercherUnProduitCher(400);
+        return productDao.chercherUnProduitCher(prix);
     }
+    
+    @GetMapping(value = "test/produits")
+    public List<Product> trierProduitsParOrdreAlphabetique(){
+    	return productDao.findAllByOrderByNomAsc();
+    }
+    
+    
 
 
 
